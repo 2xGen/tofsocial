@@ -19,7 +19,7 @@ export default function Navbar() {
             className="h-8 w-auto md:h-10"
             priority
           />
-          <span className="hidden pb-0.5 text-[10px] font-bold tracking-wide text-white sm:inline md:text-xs">
+          <span className="pb-0.5 text-[10px] font-bold tracking-wide text-white md:text-xs">
             Social
           </span>
         </Link>
