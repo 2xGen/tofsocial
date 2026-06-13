@@ -1,0 +1,210 @@
+@tailwind base;
+
+@tailwind components;
+
+@tailwind utilities;
+
+
+
+@layer base {
+
+  html {
+
+    scroll-behavior: smooth;
+
+  }
+
+
+
+  body {
+
+    @apply bg-white text-tof-navy antialiased;
+
+  }
+
+}
+
+
+
+@layer components {
+
+  .tof-pattern {
+
+    background-color: #1b144c;
+
+    background-image: url('https://toftennis.nl/wp-content/uploads/2024/04/Blauwe-bal-150x150.png');
+
+    background-repeat: repeat;
+
+    background-size: 50px 50px;
+
+  }
+
+
+
+  @media (min-width: 768px) {
+
+    .tof-pattern {
+
+      background-size: 80px 80px;
+
+    }
+
+  }
+
+
+
+  .tof-pattern-overlay {
+
+    background: linear-gradient(
+
+      180deg,
+
+      rgba(62, 200, 188, 0.93) 0%,
+
+      rgba(62, 200, 188, 0.93) 64%,
+
+      rgba(180, 255, 200, 1) 100%
+
+    );
+
+    opacity: 0.93;
+
+  }
+
+
+
+  .tof-pattern-subtle-overlay {
+
+    background: linear-gradient(
+
+      180deg,
+
+      rgba(62, 200, 188, 0.35) 0%,
+
+      rgba(255, 255, 255, 0.88) 40%,
+
+      rgba(180, 255, 200, 0.45) 100%
+
+    );
+
+  }
+
+
+
+  .section-padding {
+
+    @apply py-20 md:py-28;
+
+  }
+
+
+
+  .section-badge {
+
+    @apply rounded-full bg-tof-teal/20 px-4 py-1 text-xs font-bold uppercase tracking-wider text-tof-navy;
+
+  }
+
+
+
+  .section-title {
+
+    @apply font-poppins text-3xl font-bold leading-tight text-tof-navy md:text-4xl;
+
+  }
+
+
+
+  .section-desc {
+
+    @apply text-base leading-relaxed text-gray-600 md:text-lg;
+
+  }
+
+
+
+  .tof-card {
+
+    @apply overflow-hidden rounded-card border-2 border-tof-navy/10 bg-white;
+
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+
+  }
+
+
+
+  .tof-card-prominent {
+
+    @apply rounded-card border-2 border-tof-navy/10 bg-white;
+
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+
+  }
+
+
+
+  .tof-card-body {
+
+    @apply p-6 md:p-8;
+
+  }
+
+
+
+  .tof-card-inner {
+
+    @apply rounded-xl border border-tof-navy/10 bg-gray-50/50 p-4;
+
+  }
+
+
+
+  .btn-primary {
+
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-tof-navy to-tof-purple px-8 py-3.5 text-sm font-bold text-white shadow-lg transition-transform hover:scale-[1.02] md:text-base;
+
+  }
+
+
+
+  .btn-secondary {
+
+    @apply inline-flex items-center justify-center gap-2 rounded-full border-2 border-tof-navy/15 bg-white px-8 py-3.5 text-sm font-bold text-tof-navy transition-colors hover:border-tof-teal hover:bg-tof-teal/5 md:text-base;
+
+  }
+
+}
+
+
+
+@layer utilities {
+
+  .feed-scroll {
+
+    scrollbar-width: thin;
+
+    scrollbar-color: #3ec8bc transparent;
+
+  }
+
+
+
+  .feed-scroll::-webkit-scrollbar {
+
+    width: 4px;
+
+  }
+
+
+
+  .feed-scroll::-webkit-scrollbar-thumb {
+
+    background: #3ec8bc;
+
+    border-radius: 4px;
+
+  }
+
+}
+
