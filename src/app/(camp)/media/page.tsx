@@ -15,6 +15,8 @@ import {
 export default function MediaPage() {
   const [items, setItems] = useState<CampMediaItem[]>([]);
   const [caption, setCaption] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -30,29 +32,55 @@ export default function MediaPage() {
     return () => unsub();
   }, [refresh]);
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+
     if (!file.type.startsWith('image/')) {
       setError('Alleen afbeeldingen zijn toegestaan.');
-      e.target.value = '';
+      setSelectedFile(null);
       return;
     }
 
     setError('');
     setSuccess('');
+    setSelectedFile(file);
+  }
+
+  async function handleUpload() {
+    if (!selectedFile) return;
+
+    setError('');
+    setSuccess('');
     setUploading(true);
     try {
-      await uploadCampMedia(file, caption);
+      await uploadCampMedia(selectedFile, caption);
       setCaption('');
+      setSelectedFile(null);
       setSuccess('Foto geüpload — zichtbaar op de kampwand.');
       await refresh();
     } catch {
       setError('Upload mislukt. Controleer of de media-tabel en storage bucket bestaan in Supabase.');
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
+  }
+
+  function clearSelection() {
+    setSelectedFile(null);
+    setError('');
+    setSuccess('');
   }
 
   async function handleDelete(item: CampMediaItem) {
@@ -117,20 +145,53 @@ export default function MediaPage() {
             className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-tof-teal"
           />
         </div>
-        <label
-          className={`btn-primary inline-flex w-full cursor-pointer justify-center py-3 ${
-            uploading ? 'pointer-events-none opacity-50' : ''
-          }`}
-        >
-          {uploading ? 'Uploaden…' : 'Foto kiezen en uploaden'}
-          <input
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            disabled={uploading}
-            onChange={handleUpload}
-          />
-        </label>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-semibold text-tof-navy">Foto</label>
+          <label className="btn-secondary inline-flex w-full cursor-pointer justify-center py-3">
+            {selectedFile ? 'Andere foto kiezen' : 'Foto kiezen'}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={uploading}
+              onChange={handleFileSelect}
+            />
+          </label>
+        </div>
+
+        {previewUrl && selectedFile ? (
+          <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
+            <div className="relative aspect-video overflow-hidden rounded-lg bg-gray-200">
+              <Image
+                src={previewUrl}
+                alt="Geselecteerde foto"
+                fill
+                className="object-contain"
+                unoptimized
+              />
+            </div>
+            <p className="truncate text-xs text-gray-500">{selectedFile.name}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={uploading}
+                className="btn-primary flex-1 py-3 disabled:opacity-50"
+              >
+                {uploading ? 'Uploaden…' : 'Uploaden'}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                disabled={uploading}
+                className="btn-secondary px-4 py-3 disabled:opacity-50"
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-6 tof-card tof-card-body">
