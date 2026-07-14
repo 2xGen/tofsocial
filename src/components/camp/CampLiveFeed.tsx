@@ -7,7 +7,7 @@ import {
   getCampFeed,
   getCampPlayers,
   subscribeCampFeed,
-  usesSupabase,
+  usesCampRealtime,
 } from '@/lib/camp-store';
 
 function timeAgo(iso: string) {
@@ -37,7 +37,7 @@ export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps)
   useEffect(() => {
     refresh();
     const unsubRealtime = subscribeCampFeed(refresh);
-    const pollId = usesSupabase() ? null : setInterval(refresh, 3000);
+    const pollId = usesCampRealtime() ? null : setInterval(refresh, 3000);
     return () => {
       unsubRealtime();
       if (pollId) clearInterval(pollId);
@@ -105,7 +105,7 @@ export function useCampPoll(onTick: () => void, intervalMs = 3000) {
   useEffect(() => {
     onTick();
     const unsub = subscribeCampFeed(onTick);
-    const pollId = usesSupabase() ? null : setInterval(onTick, intervalMs);
+    const pollId = usesCampRealtime() ? null : setInterval(onTick, intervalMs);
     return () => {
       unsub();
       if (pollId) clearInterval(pollId);
