@@ -10,16 +10,24 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: 'TOF Social – Maak van jeugdleden actieve clubspelers',
+  title: 'TOF Social · Tenniskamp',
   description:
-    'TOF Social maakt wedstrijden, speeltijd, uitdagingen en voortgang zichtbaar zodat jeugdspelers vaker de baan op gaan.',
+    'Live scorebord tenniskamp — punten, speler van de dag en groepsranking voor ouders en begeleiders.',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
   icons: {
     icon: 'https://toftennis.nl/wp-content/uploads/2024/04/TOF-logo.svg',
   },
   openGraph: {
-    title: 'TOF Social – Maak van jeugdleden actieve clubspelers',
+    title: 'TOF Social · Tenniskamp',
     description:
-      'TOF Social maakt wedstrijden, speeltijd, uitdagingen en voortgang zichtbaar zodat jeugdspelers vaker de baan op gaan.',
+      'Live scorebord tenniskamp — punten, speler van de dag en groepsranking.',
     type: 'website',
     locale: 'nl_NL',
   },

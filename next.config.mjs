@@ -13,6 +13,33 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    const campHome = '/tof-kamp';
+    const legacy = [
+      '/',
+      '/kamp',
+      '/vereniging',
+      '/verenigingen',
+      '/profiel',
+      '/log',
+      '/spelers',
+      '/feed',
+      '/dashboard',
+      '/instellingen',
+      '/club',
+      '/login',
+      '/register',
+      '/register/:path*',
+      '/register/player',
+      '/register/club',
+      '/wachten',
+    ];
+    return legacy.map((source) => ({
+      source,
+      destination: campHome,
+      permanent: false,
+    }));
+  },
 };
 
 export default nextConfig;
