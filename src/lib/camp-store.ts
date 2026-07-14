@@ -27,6 +27,7 @@ function defaultStore(): CampStore {
     challenges: [],
     feed: [],
     activeDay: 'ma',
+    groupNames: {},
   };
 }
 
@@ -40,6 +41,7 @@ function readLocalStore(): CampStore {
   }
   const parsed = JSON.parse(raw) as CampStore;
   if (parsed.players.length === 0) parsed.players = createDefaultCampPlayers();
+  if (!parsed.groupNames) parsed.groupNames = {};
   return parsed;
 }
 
@@ -78,6 +80,20 @@ type DbFeed = {
   description: string;
   created_at: string;
 };
+
+type DbGroup = {
+  id: number;
+  name: string;
+};
+
+function mapGroupNames(rows: DbGroup[]): Record<number, string> {
+  const names: Record<number, string> = {};
+  for (const row of rows) {
+    const trimmed = row.name.trim();
+    if (trimmed) names[row.id] = trimmed;
+  }
+  return names;
+}
 
 function mapPlayer(row: DbPlayer): CampPlayer {
   return {
@@ -148,6 +164,14 @@ export function usesSupabase(): boolean {
   return typeof window !== 'undefined' && isSupabaseConfigured();
 }
 
+async function fetchGroupNamesFromSupabase(
+  supabase: ReturnType<typeof createClient>
+): Promise<Record<number, string>> {
+  const { data, error } = await supabase.from('camp_groups').select('id, name').order('id');
+  if (error) return {};
+  return mapGroupNames((data ?? []) as DbGroup[]);
+}
+
 export async function getCampStore(): Promise<CampStore> {
   if (!shouldUseSupabase()) return readLocalStore();
 
@@ -166,11 +190,13 @@ export async function getCampStore(): Promise<CampStore> {
     }
 
     campSupabaseReady = true;
+    const groupNames = await fetchGroupNamesFromSupabase(supabase);
     return {
       players: (playersRes.data as DbPlayer[]).map(mapPlayer),
       challenges: ((challengesRes.data ?? []) as DbChallenge[]).map(mapChallenge),
       feed: ((feedRes.data ?? []) as DbFeed[]).map(mapFeed),
       activeDay: (settingsRes.data?.active_day as CampDay) ?? 'ma',
+      groupNames,
     };
   } catch (error) {
     if (markSupabaseUnavailable(error)) return readLocalStore();
@@ -216,6 +242,40 @@ export async function setPlayerGroup(playerId: string, groupId: number | null): 
       const store = readLocalStore();
       const player = store.players.find((p) => p.id === playerId);
       if (player) player.groupId = groupId;
+      writeLocalStore(store);
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function getCampGroupNames(): Promise<Record<number, string>> {
+  const store = await getCampStore();
+  return store.groupNames ?? {};
+}
+
+export async function setCampGroupName(groupId: number, name: string): Promise<void> {
+  const trimmed = name.trim();
+
+  if (!shouldUseSupabase()) {
+    const store = readLocalStore();
+    if (!store.groupNames) store.groupNames = {};
+    if (trimmed) store.groupNames[groupId] = trimmed;
+    else delete store.groupNames[groupId];
+    writeLocalStore(store);
+    return;
+  }
+
+  const { error } = await createClient()
+    .from('camp_groups')
+    .upsert({ id: groupId, name: trimmed });
+
+  if (error) {
+    if (markSupabaseUnavailable(error)) {
+      const store = readLocalStore();
+      if (!store.groupNames) store.groupNames = {};
+      if (trimmed) store.groupNames[groupId] = trimmed;
+      else delete store.groupNames[groupId];
       writeLocalStore(store);
       return;
     }
@@ -492,14 +552,14 @@ export async function computeGroupStats(day?: CampDay): Promise<GroupDayStats[]>
   return groups.sort((a, b) => b.totalPoints - a.totalPoints);
 }
 
-export async function getPlayerOfDay(day: CampDay): Promise<PlayerDayStats | null> {
+export async function getPlayerOfDay(day?: CampDay): Promise<PlayerDayStats | null> {
   const stats = (await computePlayerStats(day))
     .filter((s) => s.totalPoints > 0)
     .sort((a, b) => b.totalPoints - a.totalPoints);
   return stats[0] ?? null;
 }
 
-export async function getTopPlayers(day: CampDay, limit = 5): Promise<PlayerDayStats[]> {
+export async function getTopPlayers(day?: CampDay, limit = 5): Promise<PlayerDayStats[]> {
   return (await computePlayerStats(day))
     .filter((s) => s.totalPoints > 0)
     .sort((a, b) => b.totalPoints - a.totalPoints)

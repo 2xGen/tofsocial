@@ -168,6 +168,10 @@ export default function AdminPage() {
         Trainer: <Link href="/trainer" className="text-tof-teal hover:underline">/trainer</Link>
         {' · '}
         Groepen: <Link href="/groepen" className="text-tof-teal hover:underline">/groepen</Link>
+        {' · '}
+        Media: <Link href="/media" className="text-tof-teal hover:underline">/media</Link>
+        {' · '}
+        Foto&apos;s: <Link href="/kampfotos" className="text-tof-teal hover:underline">/kampfotos</Link>
       </p>
     </div>
   );

@@ -40,6 +40,7 @@ export interface CampStore {
   challenges: CampChallenge[];
   feed: CampFeedEntry[];
   activeDay: CampDay;
+  groupNames: Record<number, string>;
 }
 
 export const CAMP_DAYS: { id: CampDay; label: string }[] = [
@@ -49,12 +50,15 @@ export const CAMP_DAYS: { id: CampDay; label: string }[] = [
   { id: 'do', label: 'Donderdag' },
 ];
 
+export type ViewPeriod = CampDay | 'totaal';
+
 export const CAMP_TRAINERS = [
   'Remco',
   'Stefan',
   'Jort',
   'Matthijs',
   'Floor',
+  'Liv',
   'Sem',
   'Angelique',
 ] as const;
@@ -74,6 +78,16 @@ export const SPECIAL_CATEGORIES: {
 export const POINT_OPTIONS: CampPointAmount[] = [5, 10, 15, 20];
 
 export const GROUP_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+
+export function formatGroupLabel(groupId: number, groupNames: Record<number, string> = {}): string {
+  const name = groupNames[groupId]?.trim();
+  return name ? `Groep ${groupId} — ${name}` : `Groep ${groupId}`;
+}
+
+export function groupDisplayName(groupId: number, groupNames: Record<number, string> = {}): string {
+  const name = groupNames[groupId]?.trim();
+  return name || `Groep ${groupId}`;
+}
 
 /** Special badge = +5 punten per toekenning */
 export const SPECIAL_POINTS = 5;

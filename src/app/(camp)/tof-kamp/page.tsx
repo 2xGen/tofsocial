@@ -5,13 +5,17 @@ import {
   CAMP_DAYS,
   GROUP_NUMBERS,
   SPECIAL_LABELS,
-  type CampDay,
+  groupDisplayName,
+  formatGroupLabel,
   type CampPlayer,
   type SpecialCategory,
+  type ViewPeriod,
 } from '@/types/camp';
 import type { GroupDayStats, PlayerDayStats } from '@/lib/camp-store';
 import {
   computeGroupStats,
+  computePlayerStats,
+  getCampGroupNames,
   getCampPlayers,
   getCampStore,
   getPlayerOfDay,
@@ -19,15 +23,23 @@ import {
   getTopPlayers,
 } from '@/lib/camp-store';
 import CampLiveFeed, { useCampPoll } from '@/components/camp/CampLiveFeed';
+import CampMediaWall from '@/components/camp/CampMediaWall';
+import { PlayerNameWithBadge } from '@/components/camp/PlayerHundredBadge';
+import Link from 'next/link';
 
 type GroupView = '' | 'unassigned' | number;
 
 export default function TofKampPage() {
-  const [viewDay, setViewDay] = useState<CampDay>('ma');
+  const [viewPeriod, setViewPeriod] = useState<ViewPeriod>('ma');
   const [players, setPlayers] = useState<CampPlayer[]>([]);
   const [playerOfDay, setPlayerOfDay] = useState<PlayerDayStats | null>(null);
   const [topPlayers, setTopPlayers] = useState<PlayerDayStats[]>([]);
   const [groupStats, setGroupStats] = useState<GroupDayStats[]>([]);
+  const [groupNames, setGroupNames] = useState<Record<number, string>>({});
+  const [allPlayerStats, setAllPlayerStats] = useState<PlayerDayStats[]>([]);
+  const [campTotalPoints, setCampTotalPoints] = useState<Record<string, number>>({});
+  const [playerLookup, setPlayerLookup] = useState('');
+  const [selectedLookupId, setSelectedLookupId] = useState<string | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [selectedGroupView, setSelectedGroupView] = useState<GroupView>('');
   const [specialTops, setSpecialTops] = useState<
@@ -67,22 +79,59 @@ export default function TofKampPage() {
     return [];
   }, [selectedGroupView, unassignedPlayers, playersByGroup]);
 
+  const lookupResults = useMemo(() => {
+    const q = playerLookup.trim().toLowerCase();
+    if (!q) return [];
+    return allPlayerStats
+      .filter((s) => {
+        const p = players.find((x) => x.id === s.playerId);
+        return (
+          s.nickname.toLowerCase().includes(q) ||
+          (p?.fullName.toLowerCase().includes(q) ?? false)
+        );
+      })
+      .slice(0, 8);
+  }, [playerLookup, allPlayerStats, players]);
+
+  const lookedUpPlayer = useMemo(() => {
+    if (!selectedLookupId) return null;
+    return allPlayerStats.find((s) => s.playerId === selectedLookupId) ?? null;
+  }, [selectedLookupId, allPlayerStats]);
+
+  const lookedUpRank = useMemo(() => {
+    if (!lookedUpPlayer) return null;
+    const ranked = [...allPlayerStats]
+      .filter((s) => s.totalPoints > 0)
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+    const idx = ranked.findIndex((s) => s.playerId === lookedUpPlayer.playerId);
+    return idx >= 0 ? idx + 1 : null;
+  }, [lookedUpPlayer, allPlayerStats]);
+
   const loadStats = useCallback(async () => {
-    const [allPlayers, pod, top, groups] = await Promise.all([
+    const periodDay = viewPeriod === 'totaal' ? undefined : viewPeriod;
+    const [allPlayers, pod, top, groups, names, periodStats, totalStats] = await Promise.all([
       getCampPlayers(),
-      getPlayerOfDay(viewDay),
-      getTopPlayers(viewDay, 10),
-      computeGroupStats(viewDay),
+      getPlayerOfDay(periodDay),
+      getTopPlayers(periodDay, 10),
+      computeGroupStats(periodDay),
+      getCampGroupNames(),
+      computePlayerStats(periodDay),
+      computePlayerStats(),
     ]);
     setPlayers(allPlayers);
     setPlayerOfDay(pod);
     setTopPlayers(top);
     setGroupStats(groups);
+    setGroupNames(names);
+    setAllPlayerStats(periodStats);
+    setCampTotalPoints(
+      Object.fromEntries(totalStats.map((s) => [s.playerId, s.totalPoints]))
+    );
 
     const cats: SpecialCategory[] = ['fair_play', 'respect', 'samenwerking', 'inzet'];
     const specialData = await Promise.all(
       cats.map(async (cat) => {
-        const playerRanks = await getTopBySpecial(cat, viewDay, 3);
+        const playerRanks = await getTopBySpecial(cat, periodDay, 3);
         const topGroups = [...groups]
           .filter((g) => g.memberCount > 0)
           .sort((a, b) => b[cat] - a[cat])
@@ -95,10 +144,10 @@ export default function TofKampPage() {
         specialData.map((s) => [s.cat, { players: s.players, groups: s.groups }])
       ) as typeof specialTops
     );
-  }, [viewDay]);
+  }, [viewPeriod]);
 
   useEffect(() => {
-    getCampStore().then((s) => setViewDay(s.activeDay));
+    getCampStore().then((s) => setViewPeriod(s.activeDay));
   }, []);
 
   useEffect(() => {
@@ -107,7 +156,10 @@ export default function TofKampPage() {
 
   useCampPoll(loadStats);
 
-  const dayLabel = CAMP_DAYS.find((d) => d.id === viewDay)?.label ?? viewDay;
+  const periodLabel =
+    viewPeriod === 'totaal'
+      ? 'Totaal kamp'
+      : (CAMP_DAYS.find((d) => d.id === viewPeriod)?.label ?? viewPeriod);
   const rankedGroups = groupStats.filter((g) => g.memberCount > 0);
 
   return (
@@ -125,15 +177,28 @@ export default function TofKampPage() {
         </p>
 
         <div className="mt-5">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Dag</p>
-          <div className="grid grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Periode
+          </p>
+          <div className="grid grid-cols-5 gap-1 rounded-xl bg-gray-100 p-1">
+            <button
+              type="button"
+              onClick={() => setViewPeriod('totaal')}
+              className={`rounded-lg py-2.5 text-center text-xs font-bold transition-colors sm:text-sm ${
+                viewPeriod === 'totaal'
+                  ? 'bg-white text-tof-navy shadow-sm'
+                  : 'text-gray-500 hover:text-tof-navy'
+              }`}
+            >
+              Totaal
+            </button>
             {CAMP_DAYS.map((d) => (
               <button
                 key={d.id}
                 type="button"
-                onClick={() => setViewDay(d.id)}
+                onClick={() => setViewPeriod(d.id)}
                 className={`rounded-lg py-2.5 text-center text-xs font-bold transition-colors sm:text-sm ${
-                  viewDay === d.id
+                  viewPeriod === d.id
                     ? 'bg-white text-tof-navy shadow-sm'
                     : 'text-gray-500 hover:text-tof-navy'
                 }`}
@@ -146,16 +211,128 @@ export default function TofKampPage() {
         </div>
       </div>
 
+      <div className="tof-card tof-card-body">
+        <h2 className="font-bold text-tof-navy">Zoek jouw speler</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Typ een naam om de score te zien · {periodLabel}
+        </p>
+        <p className="mt-1 text-xs text-gray-400">
+          Badge met honderdtal = button halen bij begeleider (totaal punten kamp)
+        </p>
+        <div className="mt-3">
+          <input
+            type="search"
+            value={playerLookup}
+            onChange={(e) => {
+              setPlayerLookup(e.target.value);
+              setSelectedLookupId(null);
+            }}
+            placeholder="bijv. Enzo, Sanne, Arthur…"
+            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-tof-teal"
+          />
+          {playerLookup.trim() && lookupResults.length > 0 && !selectedLookupId && (
+            <ul className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-sm">
+              {lookupResults.map((s) => (
+                <li key={s.playerId}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLookupId(s.playerId);
+                      setPlayerLookup(s.nickname);
+                    }}
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                  >
+                    <PlayerNameWithBadge
+                      name={s.nickname}
+                      totalPoints={campTotalPoints[s.playerId] ?? 0}
+                      nameClassName="font-semibold text-tof-navy"
+                    />
+                    <span className="font-bold tabular-nums text-tof-teal">
+                      {s.totalPoints} pts
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {playerLookup.trim() && lookupResults.length === 0 && (
+          <p className="mt-3 text-sm text-gray-400">Geen speler gevonden met die naam.</p>
+        )}
+
+        {lookedUpPlayer && (
+          <div className="mt-4 rounded-xl border border-tof-teal/20 bg-tof-teal/5 px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-tof-teal">
+                  {periodLabel}
+                </p>
+                <PlayerNameWithBadge
+                  name={lookedUpPlayer.nickname}
+                  totalPoints={campTotalPoints[lookedUpPlayer.playerId] ?? 0}
+                  nameClassName="text-2xl font-black text-tof-navy"
+                  className="mt-1"
+                />
+                {lookedUpPlayer.groupId ? (
+                  <p className="mt-0.5 text-sm text-gray-600">
+                    {groupDisplayName(lookedUpPlayer.groupId, groupNames)}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-sm text-gray-400">Nog geen groep</p>
+                )}
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-black tabular-nums text-tof-navy">
+                  {lookedUpPlayer.totalPoints}
+                </p>
+                <p className="text-xs font-semibold text-gray-500">punten</p>
+                {lookedUpRank && (
+                  <p className="mt-1 text-xs font-semibold text-tof-teal">
+                    #{lookedUpRank} {viewPeriod === 'totaal' ? 'kamp' : 'vandaag'}
+                  </p>
+                )}
+              </div>
+            </div>
+            {(lookedUpPlayer.fair_play > 0 ||
+              lookedUpPlayer.respect > 0 ||
+              lookedUpPlayer.samenwerking > 0 ||
+              lookedUpPlayer.inzet > 0) && (
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-tof-teal/10 pt-3">
+                {(['fair_play', 'respect', 'samenwerking', 'inzet'] as SpecialCategory[]).map(
+                  (cat) =>
+                    lookedUpPlayer[cat] > 0 ? (
+                      <span
+                        key={cat}
+                        className="rounded-lg bg-white px-2 py-1 text-xs font-semibold text-tof-navy"
+                      >
+                        {SPECIAL_LABELS[cat]} · {lookedUpPlayer[cat]}
+                      </span>
+                    ) : null
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {playerOfDay && (
         <div className="tof-card overflow-hidden p-0">
           <div className="bg-gradient-to-br from-tof-teal to-emerald-600 px-6 py-5 text-white">
             <p className="text-xs font-bold uppercase tracking-wider text-white/70">
-              Speler van de dag · {dayLabel}
+              {viewPeriod === 'totaal' ? 'Kampkampioen' : 'Speler van de dag'} · {periodLabel}
             </p>
-            <p className="mt-1 text-3xl font-black">{playerOfDay.nickname}</p>
+            <PlayerNameWithBadge
+              name={playerOfDay.nickname}
+              totalPoints={campTotalPoints[playerOfDay.playerId] ?? 0}
+              nameClassName="text-3xl font-black"
+              className="mt-1"
+            />
             <p className="mt-1 text-sm text-white/80">
               {playerOfDay.totalPoints} punten
-              {playerOfDay.groupId ? ` · Groep ${playerOfDay.groupId}` : ''}
+              {playerOfDay.groupId
+                ? ` · ${groupDisplayName(playerOfDay.groupId, groupNames)}`
+                : ''}
             </p>
           </div>
         </div>
@@ -163,8 +340,10 @@ export default function TofKampPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="tof-card tof-card-body">
-          <h2 className="font-bold text-tof-navy">Dagscore spelers</h2>
-          <p className="mt-1 text-xs text-gray-500">{dayLabel}</p>
+          <h2 className="font-bold text-tof-navy">
+            {viewPeriod === 'totaal' ? 'Totaalscore spelers' : 'Dagscore spelers'}
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">{periodLabel}</p>
           <ol className="mt-3 space-y-2">
             {topPlayers.length === 0 ? (
               <li className="text-sm text-gray-400">
@@ -184,9 +363,15 @@ export default function TofKampPage() {
                     >
                       {i + 1}
                     </span>
-                    <span className="font-semibold text-tof-navy">{p.nickname}</span>
+                    <PlayerNameWithBadge
+                      name={p.nickname}
+                      totalPoints={campTotalPoints[p.playerId] ?? 0}
+                      nameClassName="font-semibold text-tof-navy"
+                    />
                     {p.groupId && (
-                      <span className="text-xs text-gray-400">Groep {p.groupId}</span>
+                      <span className="text-xs text-gray-400">
+                        {groupDisplayName(p.groupId, groupNames)}
+                      </span>
                     )}
                   </span>
                   <span className="font-bold tabular-nums text-tof-navy">{p.totalPoints}</span>
@@ -198,7 +383,7 @@ export default function TofKampPage() {
 
         <div className="tof-card tof-card-body">
           <h2 className="font-bold text-tof-navy">Stand groepen</h2>
-          <p className="mt-1 text-xs text-gray-500">Totaal punten per groep · {dayLabel}</p>
+          <p className="mt-1 text-xs text-gray-500">Totaal punten per groep · {periodLabel}</p>
           <ol className="mt-3 space-y-2">
             {rankedGroups.length === 0 ? (
               <li className="text-sm text-gray-400">
@@ -214,7 +399,9 @@ export default function TofKampPage() {
                     <span className="flex h-6 w-6 items-center justify-center rounded-md bg-tof-navy text-xs font-black text-white">
                       {i + 1}
                     </span>
-                    <span className="font-semibold text-tof-navy">Groep {g.groupId}</span>
+                    <span className="font-semibold text-tof-navy">
+                      {groupDisplayName(g.groupId, groupNames)}
+                    </span>
                     <span className="text-xs text-gray-400">
                       {g.memberCount} speler{g.memberCount !== 1 ? 's' : ''}
                     </span>
@@ -228,7 +415,9 @@ export default function TofKampPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 font-bold text-tof-navy">Hoogtepunten van vandaag</h2>
+        <h2 className="mb-3 font-bold text-tof-navy">
+          {viewPeriod === 'totaal' ? 'Hoogtepunten kamp' : 'Hoogtepunten van vandaag'}
+        </h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {(['fair_play', 'respect', 'samenwerking', 'inzet'] as SpecialCategory[]).map(
             (cat) => {
@@ -238,7 +427,9 @@ export default function TofKampPage() {
                 <div key={cat} className="tof-card tof-card-body">
                   <h3 className="text-sm font-bold text-tof-navy">{SPECIAL_LABELS[cat]}</h3>
                   {!hasData ? (
-                    <p className="mt-3 text-xs text-gray-400">Nog geen badges vandaag</p>
+                    <p className="mt-3 text-xs text-gray-400">
+                      {viewPeriod === 'totaal' ? 'Nog geen badges' : 'Nog geen badges vandaag'}
+                    </p>
                   ) : (
                     <div className="mt-3 space-y-3">
                       {rankedPlayers.length > 0 && (
@@ -248,7 +439,11 @@ export default function TofKampPage() {
                             {rankedPlayers.map((p, i) => (
                               <li key={p.playerId} className="flex justify-between text-sm">
                                 <span className="text-gray-600">
-                                  {i + 1}. {p.nickname}
+                                  {i + 1}.{' '}
+                                  <PlayerNameWithBadge
+                                    name={p.nickname}
+                                    totalPoints={campTotalPoints[p.playerId] ?? 0}
+                                  />
                                 </span>
                                 <span className="font-bold tabular-nums text-tof-navy">
                                   {p[cat]}
@@ -265,7 +460,7 @@ export default function TofKampPage() {
                             {groups.map((g, i) => (
                               <li key={g.groupId} className="flex justify-between text-sm">
                                 <span className="text-gray-600">
-                                  {i + 1}. Groep {g.groupId}
+                                  {i + 1}. {groupDisplayName(g.groupId, groupNames)}
                                 </span>
                                 <span className="font-bold tabular-nums text-tof-navy">
                                   {g[cat]}
@@ -292,6 +487,18 @@ export default function TofKampPage() {
         <div className="mt-4">
           <CampLiveFeed limit={15} />
         </div>
+
+        <h3 className="mt-8 font-bold text-tof-navy">Kampfoto&apos;s</h3>
+        <p className="mt-1 text-sm text-gray-500">De nieuwste foto&apos;s van het kamp</p>
+        <div className="mt-4">
+          <CampMediaWall limit={4} />
+        </div>
+        <Link
+          href="/kampfotos"
+          className="mt-4 inline-flex text-sm font-semibold text-tof-teal hover:underline"
+        >
+          Bekijk alle kampfoto&apos;s
+        </Link>
       </div>
 
       <div className="tof-card overflow-hidden p-0">
@@ -339,7 +546,7 @@ export default function TofKampPage() {
                 const count = playersByGroup.get(g)?.length ?? 0;
                 return (
                   <option key={g} value={g}>
-                    Groep {g} ({count} speler{count !== 1 ? 's' : ''})
+                    {formatGroupLabel(g, groupNames)} ({count} speler{count !== 1 ? 's' : ''})
                   </option>
                 );
               })}
@@ -355,7 +562,7 @@ export default function TofKampPage() {
                 <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
                   {selectedGroupView === 'unassigned'
                     ? 'Spelers zonder groep'
-                    : `Spelers in groep ${selectedGroupView}`}
+                    : `Spelers in ${groupDisplayName(selectedGroupView as number, groupNames)}`}
                 </p>
                 {visibleGroupPlayers.length === 0 ? (
                   <p className="mt-2 text-sm text-gray-400">Nog geen spelers in deze groep.</p>
@@ -366,7 +573,11 @@ export default function TofKampPage() {
                         key={p.id}
                         className="rounded-lg bg-gray-50 px-2.5 py-1 text-xs font-semibold text-tof-navy"
                       >
-                        {p.nickname}
+                        <PlayerNameWithBadge
+                          name={p.nickname}
+                          totalPoints={campTotalPoints[p.id] ?? 0}
+                          nameClassName="text-xs font-semibold text-tof-navy"
+                        />
                       </li>
                     ))}
                   </ul>

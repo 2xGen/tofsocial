@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CampFeedEntry } from '@/types/camp';
 import { CAMP_DAYS, SPECIAL_LABELS } from '@/types/camp';
 import {
+  computePlayerStats,
   getCampFeed,
   getCampPlayers,
   subscribeCampFeed,
   usesCampRealtime,
 } from '@/lib/camp-store';
+import { PlayerNameWithBadge } from '@/components/camp/PlayerHundredBadge';
 
 function timeAgo(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -27,11 +29,19 @@ interface CampLiveFeedProps {
 export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps) {
   const [feed, setFeed] = useState<CampFeedEntry[]>([]);
   const [nicknames, setNicknames] = useState<Record<string, string>>({});
+  const [campTotalPoints, setCampTotalPoints] = useState<Record<string, number>>({});
 
   const refresh = useCallback(async () => {
-    const [feedData, players] = await Promise.all([getCampFeed(limit), getCampPlayers()]);
+    const [feedData, players, totalStats] = await Promise.all([
+      getCampFeed(limit),
+      getCampPlayers(),
+      computePlayerStats(),
+    ]);
     setFeed(feedData);
     setNicknames(Object.fromEntries(players.map((p) => [p.id, p.nickname])));
+    setCampTotalPoints(
+      Object.fromEntries(totalStats.map((s) => [s.playerId, s.totalPoints]))
+    );
   }, [limit]);
 
   useEffect(() => {
@@ -44,10 +54,16 @@ export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps)
     };
   }, [refresh]);
 
-  function formatEntry(entry: CampFeedEntry): string {
+  function renderEntryTitle(entry: CampFeedEntry) {
     if (entry.type === 'special' && entry.specialCategory) {
       const name = entry.playerId ? (nicknames[entry.playerId] ?? '…') : '?';
-      return `${name} · ${SPECIAL_LABELS[entry.specialCategory]}`;
+      const total = entry.playerId ? (campTotalPoints[entry.playerId] ?? 0) : 0;
+      return (
+        <>
+          <PlayerNameWithBadge name={name} totalPoints={total} /> ·{' '}
+          {SPECIAL_LABELS[entry.specialCategory]}
+        </>
+      );
     }
     if (entry.targetType === 'group' && entry.groupId) {
       return entry.challengeName
@@ -56,7 +72,15 @@ export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps)
     }
     if (entry.playerId) {
       const name = nicknames[entry.playerId] ?? '…';
-      return entry.challengeName ? `${name} · ${entry.challengeName}` : name;
+      const total = campTotalPoints[entry.playerId] ?? 0;
+      if (entry.challengeName) {
+        return (
+          <>
+            <PlayerNameWithBadge name={name} totalPoints={total} /> · {entry.challengeName}
+          </>
+        );
+      }
+      return <PlayerNameWithBadge name={name} totalPoints={total} />;
     }
     return entry.description || 'Punten';
   }
@@ -82,7 +106,7 @@ export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps)
           >
             <div className="min-w-0">
               <p className={`font-semibold text-tof-navy ${compact ? 'text-sm' : ''}`}>
-                {formatEntry(entry)}
+                {renderEntryTitle(entry)}
               </p>
               {entry.description && (
                 <p className="mt-0.5 truncate text-xs text-gray-500">{entry.description}</p>
