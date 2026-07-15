@@ -28,7 +28,19 @@ export default function Hero() {
           className="tof-card-prominent w-full max-w-3xl text-center"
         >
           <div className="p-8 md:p-10">
-            <div className="flex items-end justify-center gap-2 md:gap-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-tof-teal">
+              Een product van{' '}
+              <a
+                href="https://tofsports.nl/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline decoration-tof-teal/40 underline-offset-2 hover:decoration-tof-teal"
+              >
+                TOF Sports
+              </a>
+            </p>
+
+            <div className="mt-4 flex items-end justify-center gap-2 md:gap-3">
               <Image
                 src={LOGO_SRC}
                 alt="TOF"
@@ -47,7 +59,8 @@ export default function Hero() {
             </p>
             <p className="section-desc mx-auto mt-4 max-w-xl">
               TOF Social maakt wedstrijden, speeltijd, uitdagingen en voortgang
-              zichtbaar zodat jeugdspelers vaker de baan op gaan.
+              zichtbaar — zodat jeugdspelers vaker de baan op gaan en trainers
+              minder zoeken naar structuur.
             </p>
 
             <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
@@ -55,8 +68,13 @@ export default function Hero() {
                 Demo aanvragen
                 <ArrowRight className="h-4 w-4" />
               </a>
-              <a href="#contact" className="btn-secondary">
-                Start je jeugdprogramma
+              <a
+                href="https://tofsports.nl/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+              >
+                Ontdek TOF Sports
               </a>
             </div>
           </div>

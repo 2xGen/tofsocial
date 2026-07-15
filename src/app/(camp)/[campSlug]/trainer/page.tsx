@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CAMP_DAYS,
-  CAMP_TRAINERS,
   POINT_OPTIONS,
   SPECIAL_CATEGORIES,
   type CampDay,
@@ -23,12 +22,16 @@ import {
   setActiveCampDay,
   setTrainerSession,
 } from '@/lib/camp-store';
+import { getCampTrainers } from '@/lib/camp-config';
+import { useCamp } from '@/lib/camp-context';
 import { PlayerNameWithBadge } from '@/components/camp/PlayerHundredBadge';
 
 type AwardMode = 'player' | 'group' | 'special';
 
 export default function TrainerPage() {
-  const [trainer, setTrainer] = useState<CampTrainer>(CAMP_TRAINERS[0]);
+  const { campId } = useCamp();
+  const trainers = getCampTrainers(campId);
+  const [trainer, setTrainer] = useState<CampTrainer>(trainers[0]);
   const [day, setDay] = useState<CampDay>('ma');
   const [mode, setMode] = useState<AwardMode>('player');
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<string[]>([]);
@@ -43,20 +46,22 @@ export default function TrainerPage() {
   const [campTotalPoints, setCampTotalPoints] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const session = getTrainerSession();
-    if (session) {
+    const list = getCampTrainers(campId);
+    const session = getTrainerSession(campId);
+    if (session && list.includes(session)) {
       setTrainer(session);
     } else {
-      setTrainerSession(CAMP_TRAINERS[0]);
+      setTrainer(list[0]);
+      setTrainerSession(campId, list[0]);
     }
-    getCampStore().then((store) => setDay(store.activeDay));
+    getCampStore(campId).then((store) => setDay(store.activeDay));
     refresh();
-  }, []);
+  }, [campId]);
 
   async function refresh() {
     const [playerList, totalStats] = await Promise.all([
-      getCampPlayers(),
-      computePlayerStats(),
+      getCampPlayers(campId),
+      computePlayerStats(campId),
     ]);
     setPlayers(playerList);
     setCampTotalPoints(
@@ -66,11 +71,11 @@ export default function TrainerPage() {
 
   async function handleDayChange(d: CampDay) {
     setDay(d);
-    await setActiveCampDay(d);
+    await setActiveCampDay(campId, d);
   }
 
   function switchTrainer(next: CampTrainer) {
-    setTrainerSession(next);
+    setTrainerSession(campId, next);
     setTrainer(next);
     setSuccess('');
   }
@@ -83,7 +88,7 @@ export default function TrainerPage() {
       if (selectedPlayerIds.length === 0) return;
       await Promise.all(
         selectedPlayerIds.map((playerId) =>
-          awardSpecialToPlayer({
+          awardSpecialToPlayer(campId, {
             day,
             trainer,
             playerId,
@@ -103,7 +108,7 @@ export default function TrainerPage() {
       if (selectedPlayerIds.length === 0 || points < 1) return;
       await Promise.all(
         selectedPlayerIds.map((playerId) =>
-          awardPointsToPlayer({
+          awardPointsToPlayer(campId, {
             day,
             trainer,
             playerId,
@@ -121,7 +126,7 @@ export default function TrainerPage() {
 
     if (mode === 'group') {
       if (points < 1) return;
-      await awardPointsToGroup({
+      await awardPointsToGroup(campId, {
         day,
         trainer,
         groupId,
@@ -176,7 +181,7 @@ export default function TrainerPage() {
             Begeleider
           </p>
           <div className="flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1">
-            {CAMP_TRAINERS.map((t) => (
+            {trainers.map((t) => (
               <button
                 key={t}
                 type="button"

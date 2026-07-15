@@ -1,4 +1,6 @@
 import type { CampPlayer } from '@/types/camp';
+import type { CampId } from '@/lib/camp-config';
+import { createDefaultShotCampPlayers } from '@/data/shotCampPlayers';
 
 /** Raw roster — bijnaam with duplicate disambiguation via last-name initial */
 const ROSTER: { fullName: string; nickname: string }[] = [
@@ -71,6 +73,10 @@ export function createDefaultCampPlayers(): CampPlayer[] {
     nickname: p.nickname,
     groupId: null,
   }));
+}
+
+export function createDefaultPlayersForCamp(campId: CampId): CampPlayer[] {
+  return campId === 'shot' ? createDefaultShotCampPlayers() : createDefaultCampPlayers();
 }
 
 export const CAMP_PLAYER_COUNT = ROSTER.length;

@@ -10,6 +10,7 @@ import {
   subscribeCampFeed,
   usesCampRealtime,
 } from '@/lib/camp-store';
+import { useCamp } from '@/lib/camp-context';
 import { PlayerNameWithBadge } from '@/components/camp/PlayerHundredBadge';
 
 function timeAgo(iso: string) {
@@ -27,32 +28,33 @@ interface CampLiveFeedProps {
 }
 
 export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps) {
+  const { campId } = useCamp();
   const [feed, setFeed] = useState<CampFeedEntry[]>([]);
   const [nicknames, setNicknames] = useState<Record<string, string>>({});
   const [campTotalPoints, setCampTotalPoints] = useState<Record<string, number>>({});
 
   const refresh = useCallback(async () => {
     const [feedData, players, totalStats] = await Promise.all([
-      getCampFeed(limit),
-      getCampPlayers(),
-      computePlayerStats(),
+      getCampFeed(campId, limit),
+      getCampPlayers(campId),
+      computePlayerStats(campId),
     ]);
     setFeed(feedData);
     setNicknames(Object.fromEntries(players.map((p) => [p.id, p.nickname])));
     setCampTotalPoints(
       Object.fromEntries(totalStats.map((s) => [s.playerId, s.totalPoints]))
     );
-  }, [limit]);
+  }, [campId, limit]);
 
   useEffect(() => {
     refresh();
-    const unsubRealtime = subscribeCampFeed(refresh);
+    const unsubRealtime = subscribeCampFeed(campId, refresh);
     const pollId = usesCampRealtime() ? null : setInterval(refresh, 3000);
     return () => {
       unsubRealtime();
       if (pollId) clearInterval(pollId);
     };
-  }, [refresh]);
+  }, [campId, refresh]);
 
   function renderEntryTitle(entry: CampFeedEntry) {
     if (entry.type === 'special' && entry.specialCategory) {
@@ -126,13 +128,15 @@ export default function CampLiveFeed({ limit = 20, compact }: CampLiveFeedProps)
 }
 
 export function useCampPoll(onTick: () => void, intervalMs = 3000) {
+  const { campId } = useCamp();
+
   useEffect(() => {
     onTick();
-    const unsub = subscribeCampFeed(onTick);
+    const unsub = subscribeCampFeed(campId, onTick);
     const pollId = usesCampRealtime() ? null : setInterval(onTick, intervalMs);
     return () => {
       unsub();
       if (pollId) clearInterval(pollId);
     };
-  }, [onTick, intervalMs]);
+  }, [campId, onTick, intervalMs]);
 }

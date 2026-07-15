@@ -11,8 +11,10 @@ import {
   usesSupabaseMedia,
   type CampMediaItem,
 } from '@/lib/camp-media-store';
+import { useCamp } from '@/lib/camp-context';
 
 export default function MediaPage() {
+  const { campId, basePath } = useCamp();
   const [items, setItems] = useState<CampMediaItem[]>([]);
   const [caption, setCaption] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -23,14 +25,14 @@ export default function MediaPage() {
   const [success, setSuccess] = useState('');
 
   const refresh = useCallback(async () => {
-    setItems(await getCampMedia(48));
-  }, []);
+    setItems(await getCampMedia(campId, 48));
+  }, [campId]);
 
   useEffect(() => {
     refresh();
-    const unsub = subscribeCampMedia(refresh);
+    const unsub = subscribeCampMedia(campId, refresh);
     return () => unsub();
-  }, [refresh]);
+  }, [campId, refresh]);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -65,13 +67,13 @@ export default function MediaPage() {
     setSuccess('');
     setUploading(true);
     try {
-      await uploadCampMedia(selectedFile, caption);
+      await uploadCampMedia(campId, selectedFile, caption);
       setCaption('');
       setSelectedFile(null);
       setSuccess('Foto geüpload — zichtbaar op de kampwand.');
       await refresh();
     } catch {
-      setError('Upload mislukt. Controleer of de media-tabel en storage bucket bestaan in Supabase.');
+      setError('Upload mislukt. Probeer het opnieuw.');
     } finally {
       setUploading(false);
     }
@@ -88,7 +90,7 @@ export default function MediaPage() {
     setDeletingId(item.id);
     setError('');
     try {
-      await deleteCampMedia(item);
+      await deleteCampMedia(campId, item);
       await refresh();
     } catch {
       setError('Verwijderen mislukt.');
@@ -107,18 +109,14 @@ export default function MediaPage() {
             Upload foto&apos;s voor ouders op de kampwand.
           </p>
         </div>
-        <Link href="/tof-kamp" className="text-sm font-semibold text-tof-teal hover:underline">
+        <Link href={basePath} className="text-sm font-semibold text-tof-teal hover:underline">
           Naar kampwand
         </Link>
       </div>
 
       {!usesSupabaseMedia() && (
         <p className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Lokaal testen: foto&apos;s worden in deze browser opgeslagen. Voor sync tussen
-          telefoons en de live site, zet{' '}
-          <code className="text-xs">NEXT_PUBLIC_SUPABASE_URL</code> en{' '}
-          <code className="text-xs">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{' '}
-          <code className="text-xs">.env.local</code> en herstart de dev server.
+          Foto&apos;s worden lokaal in deze browser opgeslagen. Cloud-sync is niet actief.
         </p>
       )}
 
@@ -236,9 +234,15 @@ export default function MediaPage() {
       </div>
 
       <p className="mt-4 text-center text-xs text-gray-400">
-        Galerij: <Link href="/kampfotos" className="text-tof-teal hover:underline">/kampfotos</Link>
+        Galerij:{' '}
+        <Link href={`${basePath}/kampfotos`} className="text-tof-teal hover:underline">
+          {basePath}/kampfotos
+        </Link>
         {' · '}
-        Admin: <Link href="/admin" className="text-tof-teal hover:underline">/admin</Link>
+        Admin:{' '}
+        <Link href={`${basePath}/admin`} className="text-tof-teal hover:underline">
+          {basePath}/admin
+        </Link>
       </p>
     </div>
   );

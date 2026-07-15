@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import CampShell from './CampShell';
 
 export const metadata: Metadata = {
   robots: {
@@ -13,5 +12,5 @@ export const metadata: Metadata = {
 };
 
 export default function CampLayout({ children }: { children: React.ReactNode }) {
-  return <CampShell>{children}</CampShell>;
+  return children;
 }

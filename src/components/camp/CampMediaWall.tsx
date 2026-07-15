@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { getCampMedia, subscribeCampMedia } from '@/lib/camp-media-store';
 import type { CampMediaItem } from '@/lib/camp-media-store';
+import { useCamp } from '@/lib/camp-context';
 import { cn } from '@/lib/utils';
 
 interface CampMediaWallProps {
@@ -122,18 +123,19 @@ function PhotoLightbox({
 }
 
 export default function CampMediaWall({ limit, layout = 'grid' }: CampMediaWallProps) {
+  const { campId } = useCamp();
   const [items, setItems] = useState<CampMediaItem[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
-    setItems(await getCampMedia(limit));
-  }, [limit]);
+    setItems(await getCampMedia(campId, limit));
+  }, [campId, limit]);
 
   useEffect(() => {
     refresh();
-    const unsub = subscribeCampMedia(refresh);
+    const unsub = subscribeCampMedia(campId, refresh);
     return () => unsub();
-  }, [refresh]);
+  }, [campId, refresh]);
 
   if (items.length === 0) {
     return null;

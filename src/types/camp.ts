@@ -52,18 +52,8 @@ export const CAMP_DAYS: { id: CampDay; label: string }[] = [
 
 export type ViewPeriod = CampDay | 'totaal';
 
-export const CAMP_TRAINERS = [
-  'Remco',
-  'Stefan',
-  'Jort',
-  'Matthijs',
-  'Floor',
-  'Liv',
-  'Sem',
-  'Angelique',
-] as const;
-
-export type CampTrainer = (typeof CAMP_TRAINERS)[number];
+/** Trainer names are camp-specific; see getCampTrainers(campId). */
+export type CampTrainer = string;
 
 export const SPECIAL_CATEGORIES: {
   id: SpecialCategory;

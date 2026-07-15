@@ -1,6 +1,5 @@
 import Image from 'next/image';
-import Link from 'next/link';
-import { Mail, MapPin } from 'lucide-react';
+import { Mail, MapPin, Phone } from 'lucide-react';
 
 const LOGO_SRC =
   'https://toftennis.nl/wp-content/uploads/2024/04/TOF-logo.svg';
@@ -26,17 +25,29 @@ export default function Footer() {
               </span>
             </div>
             <p className="max-w-xs text-sm leading-relaxed text-white/70">
-              Voor het jeugdprogramma van tennis- en padelverenigingen. Maak
-              activiteit zichtbaar en jeugdspelers actiever op de club.
+              Digitaal clubplatform voor tennis- en padeljeugd. Maak activiteit
+              zichtbaar en jeugdspelers actiever op de vereniging.
+            </p>
+            <p className="text-sm text-white/50">
+              Een product van{' '}
+              <a
+                href="https://tofsports.nl/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-tof-teal hover:underline"
+              >
+                TOF Sports
+              </a>
+              .
             </p>
           </div>
 
           <div>
-            <h3 className="mb-4 font-bold">Functies</h3>
+            <h3 className="mb-4 font-bold">TOF Social</h3>
             <ul className="space-y-2 text-sm text-white/70">
               <li>
-                <a href="#activiteiten" className="hover:text-tof-teal">
-                  Activiteiten
+                <a href="#probleem" className="hover:text-tof-teal">
+                  Het probleem
                 </a>
               </li>
               <li>
@@ -47,11 +58,6 @@ export default function Footer() {
               <li>
                 <a href="#score" className="hover:text-tof-teal">
                   TOF Social Score
-                </a>
-              </li>
-              <li>
-                <a href="#uitdagingen" className="hover:text-tof-teal">
-                  Uitdagingen
                 </a>
               </li>
               <li>
@@ -70,30 +76,41 @@ export default function Footer() {
           <div>
             <h3 className="mb-4 font-bold">Contact</h3>
             <ul className="space-y-3 text-sm text-white/70">
-              <li className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-tof-teal" />
-                <a href="mailto:info@toftennis.nl" className="hover:text-tof-teal">
-                  info@toftennis.nl
-                </a>
-              </li>
               <li className="flex items-start gap-2">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-tof-teal" />
-                <span>Nederland</span>
+                <span>
+                  M. van Nispenstraat 16
+                  <br />
+                  3201 KC Spijkenisse
+                </span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Phone className="h-4 w-4 shrink-0 text-tof-teal" />
+                <a href="tel:+31613252559" className="hover:text-tof-teal">
+                  06 13 25 25 59
+                </a>
+              </li>
+              <li className="flex items-center gap-2">
+                <Mail className="h-4 w-4 shrink-0 text-tof-teal" />
+                <a href="mailto:info@tofsports.nl" className="hover:text-tof-teal">
+                  info@tofsports.nl
+                </a>
               </li>
             </ul>
-            <Link
-              href="https://toftennis.nl"
+            <a
+              href="https://tofsports.nl/"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-4 inline-block text-sm font-semibold text-tof-teal hover:underline"
             >
-              toftennis.nl →
-            </Link>
+              tofsports.nl →
+            </a>
           </div>
         </div>
 
-        <div className="mt-10 border-t border-white/10 pt-6 text-center text-xs text-white/50">
-          © {year} TOF Social · Onderdeel van TOF Sports
+        <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-center text-xs text-white/50 sm:flex-row sm:text-left">
+          <p>© {year} TOF Social · Onderdeel van TOF Sports</p>
+          <p>Powered by KNLTB</p>
         </div>
       </div>
     </footer>

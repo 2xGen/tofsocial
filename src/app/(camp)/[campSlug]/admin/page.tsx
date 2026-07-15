@@ -8,8 +8,8 @@ import {
   deleteCampFeedEntry,
   getCampFeed,
   getCampPlayers,
-  subscribeCampFeed,
 } from '@/lib/camp-store';
+import { useCamp } from '@/lib/camp-context';
 import { useCampPoll } from '@/components/camp/CampLiveFeed';
 
 function formatTime(iso: string) {
@@ -45,16 +45,20 @@ function entryTypeLabel(entry: CampFeedEntry): string {
 }
 
 export default function AdminPage() {
+  const { campId, basePath } = useCamp();
   const [feed, setFeed] = useState<CampFeedEntry[]>([]);
   const [nicknames, setNicknames] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const refresh = useCallback(async () => {
-    const [feedData, players] = await Promise.all([getCampFeed(), getCampPlayers()]);
+    const [feedData, players] = await Promise.all([
+      getCampFeed(campId),
+      getCampPlayers(campId),
+    ]);
     setFeed(feedData);
     setNicknames(Object.fromEntries(players.map((p) => [p.id, p.nickname])));
-  }, []);
+  }, [campId]);
 
   useEffect(() => {
     refresh();
@@ -75,7 +79,7 @@ export default function AdminPage() {
     setError('');
     setDeletingId(entry.id);
     try {
-      await deleteCampFeedEntry(entry.id);
+      await deleteCampFeedEntry(campId, entry.id);
       await refresh();
     } catch {
       setError('Verwijderen mislukt. Probeer het opnieuw.');
@@ -94,10 +98,7 @@ export default function AdminPage() {
             Alle punten en badges. Verwijder een actie als er een fout is gemaakt.
           </p>
         </div>
-        <Link
-          href="/tof-kamp"
-          className="text-sm font-semibold text-tof-teal hover:underline"
-        >
+        <Link href={basePath} className="text-sm font-semibold text-tof-teal hover:underline">
           Naar kampwand
         </Link>
       </div>
@@ -165,13 +166,25 @@ export default function AdminPage() {
       </div>
 
       <p className="mt-4 text-center text-xs text-gray-400">
-        Trainer: <Link href="/trainer" className="text-tof-teal hover:underline">/trainer</Link>
+        Trainer:{' '}
+        <Link href={`${basePath}/trainer`} className="text-tof-teal hover:underline">
+          {basePath}/trainer
+        </Link>
         {' · '}
-        Groepen: <Link href="/groepen" className="text-tof-teal hover:underline">/groepen</Link>
+        Groepen:{' '}
+        <Link href={`${basePath}/groepen`} className="text-tof-teal hover:underline">
+          {basePath}/groepen
+        </Link>
         {' · '}
-        Media: <Link href="/media" className="text-tof-teal hover:underline">/media</Link>
+        Media:{' '}
+        <Link href={`${basePath}/media`} className="text-tof-teal hover:underline">
+          {basePath}/media
+        </Link>
         {' · '}
-        Foto&apos;s: <Link href="/kampfotos" className="text-tof-teal hover:underline">/kampfotos</Link>
+        Foto&apos;s:{' '}
+        <Link href={`${basePath}/kampfotos`} className="text-tof-teal hover:underline">
+          {basePath}/kampfotos
+        </Link>
       </p>
     </div>
   );

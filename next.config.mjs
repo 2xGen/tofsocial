@@ -14,9 +14,8 @@ const nextConfig = {
     ],
   },
   async redirects() {
-    const campHome = '/tof-kamp';
-    const legacy = [
-      '/',
+    const home = '/';
+    const legacyToHome = [
       '/kamp',
       '/vereniging',
       '/verenigingen',
@@ -34,11 +33,25 @@ const nextConfig = {
       '/register/club',
       '/wachten',
     ];
-    return legacy.map((source) => ({
-      source,
-      destination: campHome,
-      permanent: false,
-    }));
+    const staffLegacy = [
+      { source: '/trainer', destination: '/tof-kamp/trainer' },
+      { source: '/media', destination: '/tof-kamp/media' },
+      { source: '/groepen', destination: '/tof-kamp/groepen' },
+      { source: '/admin', destination: '/tof-kamp/admin' },
+      { source: '/kampfotos', destination: '/tof-kamp/kampfotos' },
+    ];
+    return [
+      ...legacyToHome.map((source) => ({
+        source,
+        destination: home,
+        permanent: false,
+      })),
+      ...staffLegacy.map(({ source, destination }) => ({
+        source,
+        destination,
+        permanent: false,
+      })),
+    ];
   },
 };
 

@@ -3,15 +3,20 @@
 import { useEffect, useState } from 'react';
 import { GROUP_NUMBERS, formatGroupLabel } from '@/types/camp';
 import { getCampGroupNames, getCampPlayers, setCampGroupName, setPlayerGroup } from '@/lib/camp-store';
+import { useCamp } from '@/lib/camp-context';
 import type { CampPlayer } from '@/types/camp';
 
 export default function GroepenPage() {
+  const { campId } = useCamp();
   const [players, setPlayers] = useState<CampPlayer[]>([]);
   const [groupNames, setGroupNames] = useState<Record<number, string>>({});
   const [nameDrafts, setNameDrafts] = useState<Record<number, string>>({});
 
   async function refresh() {
-    const [playerList, names] = await Promise.all([getCampPlayers(), getCampGroupNames()]);
+    const [playerList, names] = await Promise.all([
+      getCampPlayers(campId),
+      getCampGroupNames(campId),
+    ]);
     setPlayers(playerList);
     setGroupNames(names);
     setNameDrafts(
@@ -21,19 +26,19 @@ export default function GroepenPage() {
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [campId]);
 
   async function handleGroupChange(playerId: string, value: string) {
     const groupId = value === '' ? null : parseInt(value, 10);
-    await setPlayerGroup(playerId, groupId);
-    setPlayers(await getCampPlayers());
+    await setPlayerGroup(campId, playerId, groupId);
+    setPlayers(await getCampPlayers(campId));
   }
 
   async function saveGroupName(groupId: number) {
     const name = (nameDrafts[groupId] ?? '').trim();
     if ((groupNames[groupId] ?? '') === name) return;
-    await setCampGroupName(groupId, name);
-    const names = await getCampGroupNames();
+    await setCampGroupName(campId, groupId, name);
+    const names = await getCampGroupNames(campId);
     setGroupNames(names);
     setNameDrafts((prev) => ({ ...prev, [groupId]: names[groupId] ?? '' }));
   }

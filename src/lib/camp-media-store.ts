@@ -1,6 +1,11 @@
+import type { CampId } from '@/lib/camp-config';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-const MEDIA_STORAGE_KEY = 'tof-social-camp-media';
+const LEGACY_MEDIA_KEY = 'tof-social-camp-media';
+
+function mediaKey(campId: CampId) {
+  return `tof-social-camp-media:${campId}`;
+}
 
 export interface CampMediaItem {
   id: string;
@@ -28,9 +33,18 @@ function mapMedia(row: DbMedia): CampMediaItem {
   };
 }
 
-function readLocalMedia(): CampMediaItem[] {
+function migrateLocalMediaIfNeeded(campId: CampId) {
+  if (campId !== 'tof') return;
+  const key = mediaKey(campId);
+  if (localStorage.getItem(key)) return;
+  const legacy = localStorage.getItem(LEGACY_MEDIA_KEY);
+  if (legacy) localStorage.setItem(key, legacy);
+}
+
+function readLocalMedia(campId: CampId): CampMediaItem[] {
   if (typeof window === 'undefined') return [];
-  const raw = localStorage.getItem(MEDIA_STORAGE_KEY);
+  migrateLocalMediaIfNeeded(campId);
+  const raw = localStorage.getItem(mediaKey(campId));
   if (!raw) return [];
   try {
     return JSON.parse(raw) as CampMediaItem[];
@@ -39,8 +53,8 @@ function readLocalMedia(): CampMediaItem[] {
   }
 }
 
-function writeLocalMedia(items: CampMediaItem[]) {
-  localStorage.setItem(MEDIA_STORAGE_KEY, JSON.stringify(items));
+function writeLocalMedia(campId: CampId, items: CampMediaItem[]) {
+  localStorage.setItem(mediaKey(campId), JSON.stringify(items));
 }
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -56,18 +70,18 @@ export function usesSupabaseMedia(): boolean {
   return typeof window !== 'undefined' && isSupabaseConfigured();
 }
 
-/** Media uploads work locally (localStorage) or via Supabase. */
 export function usesCampMedia(): boolean {
   return typeof window !== 'undefined';
 }
 
-export async function getCampMedia(limit?: number): Promise<CampMediaItem[]> {
+export async function getCampMedia(campId: CampId, limit?: number): Promise<CampMediaItem[]> {
   if (!usesCampMedia()) return [];
 
   if (usesSupabaseMedia()) {
     let query = createClient()
       .from('camp_media')
       .select('*')
+      .eq('camp_id', campId)
       .order('created_at', { ascending: false });
     if (limit !== undefined) query = query.limit(limit);
     const { data, error } = await query;
@@ -75,11 +89,15 @@ export async function getCampMedia(limit?: number): Promise<CampMediaItem[]> {
     if (!error) return ((data ?? []) as DbMedia[]).map(mapMedia);
   }
 
-  const local = readLocalMedia();
+  const local = readLocalMedia(campId);
   return limit !== undefined ? local.slice(0, limit) : local;
 }
 
-async function uploadCampMediaLocal(file: File, caption: string): Promise<CampMediaItem> {
+async function uploadCampMediaLocal(
+  campId: CampId,
+  file: File,
+  caption: string
+): Promise<CampMediaItem> {
   const publicUrl = await fileToDataUrl(file);
   const item: CampMediaItem = {
     id: crypto.randomUUID(),
@@ -88,31 +106,35 @@ async function uploadCampMediaLocal(file: File, caption: string): Promise<CampMe
     caption: caption.trim(),
     createdAt: new Date().toISOString(),
   };
-  const items = readLocalMedia();
+  const items = readLocalMedia(campId);
   items.unshift(item);
-  writeLocalMedia(items);
+  writeLocalMedia(campId, items);
   return item;
 }
 
-export async function uploadCampMedia(file: File, caption = ''): Promise<CampMediaItem> {
+export async function uploadCampMedia(
+  campId: CampId,
+  file: File,
+  caption = ''
+): Promise<CampMediaItem> {
   if (!usesCampMedia()) {
     throw new Error('Upload niet beschikbaar.');
   }
 
   if (!usesSupabaseMedia()) {
-    return uploadCampMediaLocal(file, caption);
+    return uploadCampMediaLocal(campId, file, caption);
   }
 
   const supabase = createClient();
   const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-  const storagePath = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+  const storagePath = `${campId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from('camp-media')
     .upload(storagePath, file, { cacheControl: '3600', upsert: false });
 
   if (uploadError) {
-    return uploadCampMediaLocal(file, caption);
+    return uploadCampMediaLocal(campId, file, caption);
   }
 
   const { data: urlData } = supabase.storage.from('camp-media').getPublicUrl(storagePath);
@@ -120,6 +142,7 @@ export async function uploadCampMedia(file: File, caption = ''): Promise<CampMed
   const { data, error } = await supabase
     .from('camp_media')
     .insert({
+      camp_id: campId,
       storage_path: storagePath,
       public_url: urlData.publicUrl,
       caption: caption.trim(),
@@ -128,31 +151,45 @@ export async function uploadCampMedia(file: File, caption = ''): Promise<CampMed
     .single();
 
   if (error) {
-    return uploadCampMediaLocal(file, caption);
+    return uploadCampMediaLocal(campId, file, caption);
   }
   return mapMedia(data as DbMedia);
 }
 
-export async function deleteCampMedia(item: CampMediaItem): Promise<void> {
+export async function deleteCampMedia(campId: CampId, item: CampMediaItem): Promise<void> {
   if (!usesCampMedia()) return;
 
   if (usesSupabaseMedia() && !item.storagePath.startsWith('local-')) {
     const supabase = createClient();
     await supabase.storage.from('camp-media').remove([item.storagePath]);
-    const { error } = await supabase.from('camp_media').delete().eq('id', item.id);
+    const { error } = await supabase
+      .from('camp_media')
+      .delete()
+      .eq('id', item.id)
+      .eq('camp_id', campId);
     if (!error) return;
   }
 
-  writeLocalMedia(readLocalMedia().filter((m) => m.id !== item.id));
+  writeLocalMedia(
+    campId,
+    readLocalMedia(campId).filter((m) => m.id !== item.id)
+  );
 }
 
-export function subscribeCampMedia(onChange: () => void): () => void {
+export function subscribeCampMedia(campId: CampId, onChange: () => void): () => void {
   if (usesSupabaseMedia()) {
     const supabase = createClient();
     const channel = supabase
-      .channel('camp-media-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'camp_media' }, () =>
-        onChange()
+      .channel(`camp-media-live-${campId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'camp_media',
+          filter: `camp_id=eq.${campId}`,
+        },
+        () => onChange()
       )
       .subscribe();
 
@@ -161,8 +198,9 @@ export function subscribeCampMedia(onChange: () => void): () => void {
     };
   }
 
+  const key = mediaKey(campId);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === MEDIA_STORAGE_KEY) onChange();
+    if (e.key === key) onChange();
   };
   window.addEventListener('storage', onStorage);
   const pollId = setInterval(onChange, 3000);

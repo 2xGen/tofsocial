@@ -47,18 +47,20 @@ export default function CTASection() {
 
           <div className="mt-10 flex flex-col justify-center gap-4 sm:flex-row">
             <a
-              href="mailto:info@toftennis.nl?subject=TOF%20Social%20demo"
+              href="mailto:info@tofsports.nl?subject=TOF%20Social%20demo"
               className="btn-primary py-4"
             >
               Demo aanvragen
               <ArrowRight className="h-5 w-5" />
             </a>
             <a
-              href="mailto:info@toftennis.nl?subject=TOF%20Social%20contact"
+              href="https://tofsports.nl/"
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-secondary py-4"
             >
               <Mail className="h-5 w-5" />
-              Contact
+              TOF Sports
             </a>
           </div>
         </motion.div>

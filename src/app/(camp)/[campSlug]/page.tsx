@@ -25,11 +25,13 @@ import {
 import CampLiveFeed, { useCampPoll } from '@/components/camp/CampLiveFeed';
 import CampMediaWall from '@/components/camp/CampMediaWall';
 import { PlayerNameWithBadge } from '@/components/camp/PlayerHundredBadge';
+import { useCamp } from '@/lib/camp-context';
 import Link from 'next/link';
 
 type GroupView = '' | 'unassigned' | number;
 
-export default function TofKampPage() {
+export default function CampWallPage() {
+  const { campId, basePath, name } = useCamp();
   const [viewPeriod, setViewPeriod] = useState<ViewPeriod>('ma');
   const [players, setPlayers] = useState<CampPlayer[]>([]);
   const [playerOfDay, setPlayerOfDay] = useState<PlayerDayStats | null>(null);
@@ -110,13 +112,13 @@ export default function TofKampPage() {
   const loadStats = useCallback(async () => {
     const periodDay = viewPeriod === 'totaal' ? undefined : viewPeriod;
     const [allPlayers, pod, top, groups, names, periodStats, totalStats] = await Promise.all([
-      getCampPlayers(),
-      getPlayerOfDay(periodDay),
-      getTopPlayers(periodDay, 10),
-      computeGroupStats(periodDay),
-      getCampGroupNames(),
-      computePlayerStats(periodDay),
-      computePlayerStats(),
+      getCampPlayers(campId),
+      getPlayerOfDay(campId, periodDay),
+      getTopPlayers(campId, periodDay, 10),
+      computeGroupStats(campId, periodDay),
+      getCampGroupNames(campId),
+      computePlayerStats(campId, periodDay),
+      computePlayerStats(campId),
     ]);
     setPlayers(allPlayers);
     setPlayerOfDay(pod);
@@ -131,7 +133,7 @@ export default function TofKampPage() {
     const cats: SpecialCategory[] = ['fair_play', 'respect', 'samenwerking', 'inzet'];
     const specialData = await Promise.all(
       cats.map(async (cat) => {
-        const playerRanks = await getTopBySpecial(cat, periodDay, 3);
+        const playerRanks = await getTopBySpecial(campId, cat, periodDay, 3);
         const topGroups = [...groups]
           .filter((g) => g.memberCount > 0)
           .sort((a, b) => b[cat] - a[cat])
@@ -144,11 +146,11 @@ export default function TofKampPage() {
         specialData.map((s) => [s.cat, { players: s.players, groups: s.groups }])
       ) as typeof specialTops
     );
-  }, [viewPeriod]);
+  }, [campId, viewPeriod]);
 
   useEffect(() => {
-    getCampStore().then((s) => setViewPeriod(s.activeDay));
-  }, []);
+    getCampStore(campId).then((s) => setViewPeriod(s.activeDay));
+  }, [campId]);
 
   useEffect(() => {
     loadStats();
@@ -166,10 +168,12 @@ export default function TofKampPage() {
     <div className="space-y-6">
       <div className="tof-card tof-card-body border border-tof-teal/15 bg-gradient-to-br from-amber-50/60 via-white to-teal-50/40">
         <p className="text-xs font-bold uppercase tracking-wider text-tof-teal">
-          TOF Social dashboard
+          {campId === 'tof' ? 'TOF Social dashboard' : `${name} dashboard`}
         </p>
         <h1 className="mt-2 text-2xl font-black leading-tight text-tof-navy md:text-3xl">
-          Het leukste Tennis, Padel &amp; Fun kamp van Voorne aan Zee!
+          {campId === 'tof'
+            ? 'Het leukste Tennis, Padel & Fun kamp van Voorne aan Zee!'
+            : 'SHOT Tenniskamp'}
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-600">
           Welkom op de kampwand. Volg live mee wie er scoort en wat er vandaag gebeurt op het
@@ -494,7 +498,7 @@ export default function TofKampPage() {
           <CampMediaWall limit={4} />
         </div>
         <Link
-          href="/kampfotos"
+          href={`${basePath}/kampfotos`}
           className="mt-4 inline-flex text-sm font-semibold text-tof-teal hover:underline"
         >
           Bekijk alle kampfoto&apos;s

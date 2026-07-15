@@ -9,21 +9,28 @@ import type {
   SpecialCategory,
 } from '@/types/camp';
 import { SPECIAL_POINTS } from '@/types/camp';
-import { createDefaultCampPlayers } from '@/data/campPlayers';
+import { createDefaultPlayersForCamp } from '@/data/campPlayers';
+import type { CampId } from '@/lib/camp-config';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-const STORAGE_KEY = 'tof-social-camp';
-const TRAINER_KEY = 'tof-social-camp-trainer';
+const LEGACY_STORAGE_KEY = 'tof-social-camp';
+const LEGACY_TRAINER_KEY = 'tof-social-camp-trainer';
 
-// ─── localStorage fallback ───────────────────────────────────────────────────
+function storageKey(campId: CampId) {
+  return `tof-social-camp:${campId}`;
+}
+
+function trainerKey(campId: CampId) {
+  return `tof-social-camp-trainer:${campId}`;
+}
 
 function generateId() {
   return crypto.randomUUID();
 }
 
-function defaultStore(): CampStore {
+function defaultStore(campId: CampId): CampStore {
   return {
-    players: createDefaultCampPlayers(),
+    players: createDefaultPlayersForCamp(campId),
     challenges: [],
     feed: [],
     activeDay: 'ma',
@@ -31,25 +38,40 @@ function defaultStore(): CampStore {
   };
 }
 
-function readLocalStore(): CampStore {
-  if (typeof window === 'undefined') return defaultStore();
-  const raw = localStorage.getItem(STORAGE_KEY);
+function migrateLocalStoreIfNeeded(campId: CampId) {
+  if (campId !== 'tof') return;
+  const key = storageKey(campId);
+  if (localStorage.getItem(key)) return;
+  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy) localStorage.setItem(key, legacy);
+}
+
+function migrateTrainerIfNeeded(campId: CampId) {
+  if (campId !== 'tof') return;
+  const key = trainerKey(campId);
+  if (localStorage.getItem(key)) return;
+  const legacy = localStorage.getItem(LEGACY_TRAINER_KEY);
+  if (legacy) localStorage.setItem(key, legacy);
+}
+
+function readLocalStore(campId: CampId): CampStore {
+  if (typeof window === 'undefined') return defaultStore(campId);
+  migrateLocalStoreIfNeeded(campId);
+  const raw = localStorage.getItem(storageKey(campId));
   if (!raw) {
-    const store = defaultStore();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    const store = defaultStore(campId);
+    localStorage.setItem(storageKey(campId), JSON.stringify(store));
     return store;
   }
   const parsed = JSON.parse(raw) as CampStore;
-  if (parsed.players.length === 0) parsed.players = createDefaultCampPlayers();
+  if (parsed.players.length === 0) parsed.players = createDefaultPlayersForCamp(campId);
   if (!parsed.groupNames) parsed.groupNames = {};
   return parsed;
 }
 
-function writeLocalStore(store: CampStore) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+function writeLocalStore(campId: CampId, store: CampStore) {
+  localStorage.setItem(storageKey(campId), JSON.stringify(store));
 }
-
-// ─── Supabase row mappers ────────────────────────────────────────────────────
 
 type DbPlayer = {
   id: string;
@@ -131,9 +153,6 @@ function mapFeed(row: DbFeed): CampFeedEntry {
   };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
-
-/** Set false when Supabase tables are missing so we fall back to localStorage. */
 let campSupabaseReady: boolean | null = null;
 
 function isSupabaseUnavailableError(error: unknown): boolean {
@@ -165,32 +184,45 @@ export function usesSupabase(): boolean {
 }
 
 async function fetchGroupNamesFromSupabase(
-  supabase: ReturnType<typeof createClient>
+  supabase: ReturnType<typeof createClient>,
+  campId: CampId
 ): Promise<Record<number, string>> {
-  const { data, error } = await supabase.from('camp_groups').select('id, name').order('id');
+  const { data, error } = await supabase
+    .from('camp_groups')
+    .select('id, name')
+    .eq('camp_id', campId)
+    .order('id');
   if (error) return {};
   return mapGroupNames((data ?? []) as DbGroup[]);
 }
 
-export async function getCampStore(): Promise<CampStore> {
-  if (!shouldUseSupabase()) return readLocalStore();
+export async function getCampStore(campId: CampId): Promise<CampStore> {
+  if (!shouldUseSupabase()) return readLocalStore(campId);
 
   try {
     const supabase = createClient();
     const [playersRes, challengesRes, feedRes, settingsRes] = await Promise.all([
-      supabase.from('camp_players').select('*').order('nickname'),
-      supabase.from('camp_challenges').select('*').order('created_at', { ascending: false }),
-      supabase.from('camp_feed').select('*').order('created_at', { ascending: false }),
-      supabase.from('camp_settings').select('active_day').eq('id', 1).maybeSingle(),
+      supabase.from('camp_players').select('*').eq('camp_id', campId).order('nickname'),
+      supabase
+        .from('camp_challenges')
+        .select('*')
+        .eq('camp_id', campId)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('camp_feed')
+        .select('*')
+        .eq('camp_id', campId)
+        .order('created_at', { ascending: false }),
+      supabase.from('camp_settings').select('active_day').eq('camp_id', campId).maybeSingle(),
     ]);
 
     if (playersRes.error) {
-      if (markSupabaseUnavailable(playersRes.error)) return readLocalStore();
+      if (markSupabaseUnavailable(playersRes.error)) return readLocalStore(campId);
       throw playersRes.error;
     }
 
     campSupabaseReady = true;
-    const groupNames = await fetchGroupNamesFromSupabase(supabase);
+    const groupNames = await fetchGroupNamesFromSupabase(supabase, campId);
     return {
       players: (playersRes.data as DbPlayer[]).map(mapPlayer),
       challenges: ((challengesRes.data ?? []) as DbChallenge[]).map(mapChallenge),
@@ -199,101 +231,111 @@ export async function getCampStore(): Promise<CampStore> {
       groupNames,
     };
   } catch (error) {
-    if (markSupabaseUnavailable(error)) return readLocalStore();
+    if (markSupabaseUnavailable(error)) return readLocalStore(campId);
     throw error;
   }
 }
 
-export async function setActiveCampDay(day: CampDay): Promise<void> {
+export async function setActiveCampDay(campId: CampId, day: CampDay): Promise<void> {
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     store.activeDay = day;
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return;
   }
   const { error } = await createClient()
     .from('camp_settings')
-    .upsert({ id: 1, active_day: day });
+    .upsert({ camp_id: campId, active_day: day });
   if (error) {
     if (markSupabaseUnavailable(error)) {
-      const store = readLocalStore();
+      const store = readLocalStore(campId);
       store.activeDay = day;
-      writeLocalStore(store);
+      writeLocalStore(campId, store);
       return;
     }
     throw error;
   }
 }
 
-export async function setPlayerGroup(playerId: string, groupId: number | null): Promise<void> {
+export async function setPlayerGroup(
+  campId: CampId,
+  playerId: string,
+  groupId: number | null
+): Promise<void> {
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     const player = store.players.find((p) => p.id === playerId);
     if (player) player.groupId = groupId;
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return;
   }
   const { error } = await createClient()
     .from('camp_players')
     .update({ group_id: groupId })
-    .eq('id', playerId);
+    .eq('id', playerId)
+    .eq('camp_id', campId);
   if (error) {
     if (markSupabaseUnavailable(error)) {
-      const store = readLocalStore();
+      const store = readLocalStore(campId);
       const player = store.players.find((p) => p.id === playerId);
       if (player) player.groupId = groupId;
-      writeLocalStore(store);
+      writeLocalStore(campId, store);
       return;
     }
     throw error;
   }
 }
 
-export async function getCampGroupNames(): Promise<Record<number, string>> {
-  const store = await getCampStore();
+export async function getCampGroupNames(campId: CampId): Promise<Record<number, string>> {
+  const store = await getCampStore(campId);
   return store.groupNames ?? {};
 }
 
-export async function setCampGroupName(groupId: number, name: string): Promise<void> {
+export async function setCampGroupName(
+  campId: CampId,
+  groupId: number,
+  name: string
+): Promise<void> {
   const trimmed = name.trim();
 
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     if (!store.groupNames) store.groupNames = {};
     if (trimmed) store.groupNames[groupId] = trimmed;
     else delete store.groupNames[groupId];
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return;
   }
 
   const { error } = await createClient()
     .from('camp_groups')
-    .upsert({ id: groupId, name: trimmed });
+    .upsert({ camp_id: campId, id: groupId, name: trimmed });
 
   if (error) {
     if (markSupabaseUnavailable(error)) {
-      const store = readLocalStore();
+      const store = readLocalStore(campId);
       if (!store.groupNames) store.groupNames = {};
       if (trimmed) store.groupNames[groupId] = trimmed;
       else delete store.groupNames[groupId];
-      writeLocalStore(store);
+      writeLocalStore(campId, store);
       return;
     }
     throw error;
   }
 }
 
-export async function getCampPlayers(): Promise<CampPlayer[]> {
-  const store = await getCampStore();
+export async function getCampPlayers(campId: CampId): Promise<CampPlayer[]> {
+  const store = await getCampStore(campId);
   return store.players.sort((a, b) => a.nickname.localeCompare(b.nickname, 'nl'));
 }
 
 export async function createCampChallenge(
+  campId: CampId,
   name: string,
   points: CampPointAmount
 ): Promise<CampChallenge> {
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     const challenge: CampChallenge = {
       id: generateId(),
       name: name.trim(),
@@ -301,43 +343,45 @@ export async function createCampChallenge(
       createdAt: new Date().toISOString(),
     };
     store.challenges.unshift(challenge);
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return challenge;
   }
   const { data, error } = await createClient()
     .from('camp_challenges')
-    .insert({ name: name.trim(), points })
+    .insert({ camp_id: campId, name: name.trim(), points })
     .select()
     .single();
   if (error) {
-    if (markSupabaseUnavailable(error)) return createCampChallenge(name, points);
+    if (markSupabaseUnavailable(error)) return createCampChallenge(campId, name, points);
     throw error;
   }
   return mapChallenge(data as DbChallenge);
 }
 
-export async function getCampChallenges(): Promise<CampChallenge[]> {
-  const store = await getCampStore();
+export async function getCampChallenges(campId: CampId): Promise<CampChallenge[]> {
+  const store = await getCampStore(campId);
   return store.challenges;
 }
 
 async function insertFeedEntry(
+  campId: CampId,
   entry: Omit<CampFeedEntry, 'id' | 'createdAt'>
 ): Promise<CampFeedEntry> {
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     const full: CampFeedEntry = {
       ...entry,
       id: generateId(),
       createdAt: new Date().toISOString(),
     };
     store.feed.unshift(full);
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return full;
   }
   const { data, error } = await createClient()
     .from('camp_feed')
     .insert({
+      camp_id: campId,
       day: entry.day,
       trainer: entry.trainer,
       type: entry.type,
@@ -353,22 +397,25 @@ async function insertFeedEntry(
     .select()
     .single();
   if (error) {
-    if (markSupabaseUnavailable(error)) return insertFeedEntry(entry);
+    if (markSupabaseUnavailable(error)) return insertFeedEntry(campId, entry);
     throw error;
   }
   return mapFeed(data as DbFeed);
 }
 
-export async function awardPointsToPlayer(input: {
-  day: CampDay;
-  trainer: CampTrainer;
-  playerId: string;
-  points: number;
-  description: string;
-  challengeId?: string;
-  challengeName?: string;
-}): Promise<CampFeedEntry> {
-  return insertFeedEntry({
+export async function awardPointsToPlayer(
+  campId: CampId,
+  input: {
+    day: CampDay;
+    trainer: CampTrainer;
+    playerId: string;
+    points: number;
+    description: string;
+    challengeId?: string;
+    challengeName?: string;
+  }
+): Promise<CampFeedEntry> {
+  return insertFeedEntry(campId, {
     day: input.day,
     trainer: input.trainer,
     type: input.challengeId ? 'challenge' : 'points',
@@ -381,18 +428,21 @@ export async function awardPointsToPlayer(input: {
   });
 }
 
-export async function awardPointsToGroup(input: {
-  day: CampDay;
-  trainer: CampTrainer;
-  groupId: number;
-  points: number;
-  description: string;
-  challengeId?: string;
-  challengeName?: string;
-}): Promise<CampFeedEntry> {
-  const players = await getCampPlayers();
+export async function awardPointsToGroup(
+  campId: CampId,
+  input: {
+    day: CampDay;
+    trainer: CampTrainer;
+    groupId: number;
+    points: number;
+    description: string;
+    challengeId?: string;
+    challengeName?: string;
+  }
+): Promise<CampFeedEntry> {
+  const players = await getCampPlayers(campId);
   const members = players.filter((p) => p.groupId === input.groupId);
-  return insertFeedEntry({
+  return insertFeedEntry(campId, {
     day: input.day,
     trainer: input.trainer,
     type: input.challengeId ? 'challenge' : 'points',
@@ -406,14 +456,17 @@ export async function awardPointsToGroup(input: {
   });
 }
 
-export async function awardSpecialToPlayer(input: {
-  day: CampDay;
-  trainer: CampTrainer;
-  playerId: string;
-  category: SpecialCategory;
-  description?: string;
-}): Promise<CampFeedEntry> {
-  return insertFeedEntry({
+export async function awardSpecialToPlayer(
+  campId: CampId,
+  input: {
+    day: CampDay;
+    trainer: CampTrainer;
+    playerId: string;
+    category: SpecialCategory;
+    description?: string;
+  }
+): Promise<CampFeedEntry> {
+  return insertFeedEntry(campId, {
     day: input.day,
     trainer: input.trainer,
     type: 'special',
@@ -425,21 +478,22 @@ export async function awardSpecialToPlayer(input: {
   });
 }
 
-export async function getCampFeed(limit?: number): Promise<CampFeedEntry[]> {
+export async function getCampFeed(campId: CampId, limit?: number): Promise<CampFeedEntry[]> {
   if (!shouldUseSupabase()) {
-    const feed = readLocalStore().feed;
+    const feed = readLocalStore(campId).feed;
     return limit ? feed.slice(0, limit) : feed;
   }
   try {
     let query = createClient()
       .from('camp_feed')
       .select('*')
+      .eq('camp_id', campId)
       .order('created_at', { ascending: false });
     if (limit) query = query.limit(limit);
     const { data, error } = await query;
     if (error) {
       if (markSupabaseUnavailable(error)) {
-        const feed = readLocalStore().feed;
+        const feed = readLocalStore(campId).feed;
         return limit ? feed.slice(0, limit) : feed;
       }
       throw error;
@@ -447,26 +501,30 @@ export async function getCampFeed(limit?: number): Promise<CampFeedEntry[]> {
     return ((data ?? []) as DbFeed[]).map(mapFeed);
   } catch (error) {
     if (markSupabaseUnavailable(error)) {
-      const feed = readLocalStore().feed;
+      const feed = readLocalStore(campId).feed;
       return limit ? feed.slice(0, limit) : feed;
     }
     throw error;
   }
 }
 
-export async function deleteCampFeedEntry(id: string): Promise<void> {
+export async function deleteCampFeedEntry(campId: CampId, id: string): Promise<void> {
   if (!shouldUseSupabase()) {
-    const store = readLocalStore();
+    const store = readLocalStore(campId);
     store.feed = store.feed.filter((e) => e.id !== id);
-    writeLocalStore(store);
+    writeLocalStore(campId, store);
     return;
   }
-  const { error } = await createClient().from('camp_feed').delete().eq('id', id);
+  const { error } = await createClient()
+    .from('camp_feed')
+    .delete()
+    .eq('id', id)
+    .eq('camp_id', campId);
   if (error) {
     if (markSupabaseUnavailable(error)) {
-      const store = readLocalStore();
+      const store = readLocalStore(campId);
       store.feed = store.feed.filter((e) => e.id !== id);
-      writeLocalStore(store);
+      writeLocalStore(campId, store);
       return;
     }
     throw error;
@@ -489,8 +547,11 @@ function applyEntryToStats(s: PlayerDayStats, entry: CampFeedEntry) {
   if (entry.specialCategory) s[entry.specialCategory] += 1;
 }
 
-export async function computePlayerStats(day?: CampDay): Promise<PlayerDayStats[]> {
-  const store = await getCampStore();
+export async function computePlayerStats(
+  campId: CampId,
+  day?: CampDay
+): Promise<PlayerDayStats[]> {
+  const store = await getCampStore(campId);
   const feed = day ? store.feed.filter((e) => e.day === day) : store.feed;
 
   const statsMap = new Map<string, PlayerDayStats>();
@@ -532,8 +593,11 @@ export interface GroupDayStats {
   inzet: number;
 }
 
-export async function computeGroupStats(day?: CampDay): Promise<GroupDayStats[]> {
-  const playerStats = await computePlayerStats(day);
+export async function computeGroupStats(
+  campId: CampId,
+  day?: CampDay
+): Promise<GroupDayStats[]> {
+  const playerStats = await computePlayerStats(campId, day);
   const groups: GroupDayStats[] = [];
 
   for (let g = 1; g <= 9; g++) {
@@ -552,62 +616,87 @@ export async function computeGroupStats(day?: CampDay): Promise<GroupDayStats[]>
   return groups.sort((a, b) => b.totalPoints - a.totalPoints);
 }
 
-export async function getPlayerOfDay(day?: CampDay): Promise<PlayerDayStats | null> {
-  const stats = (await computePlayerStats(day))
+export async function getPlayerOfDay(
+  campId: CampId,
+  day?: CampDay
+): Promise<PlayerDayStats | null> {
+  const stats = (await computePlayerStats(campId, day))
     .filter((s) => s.totalPoints > 0)
     .sort((a, b) => b.totalPoints - a.totalPoints);
   return stats[0] ?? null;
 }
 
-export async function getTopPlayers(day?: CampDay, limit = 5): Promise<PlayerDayStats[]> {
-  return (await computePlayerStats(day))
+export async function getTopPlayers(
+  campId: CampId,
+  day?: CampDay,
+  limit = 5
+): Promise<PlayerDayStats[]> {
+  return (await computePlayerStats(campId, day))
     .filter((s) => s.totalPoints > 0)
     .sort((a, b) => b.totalPoints - a.totalPoints)
     .slice(0, limit);
 }
 
 export async function getTopBySpecial(
+  campId: CampId,
   category: SpecialCategory,
   day?: CampDay,
   limit = 5
 ): Promise<PlayerDayStats[]> {
-  return (await computePlayerStats(day))
+  return (await computePlayerStats(campId, day))
     .filter((s) => s[category] > 0)
     .sort((a, b) => b[category] - a[category])
     .slice(0, limit);
 }
 
-export function getTrainerSession(): CampTrainer | null {
+export function getTrainerSession(campId: CampId): CampTrainer | null {
   if (typeof window === 'undefined') return null;
-  const v = localStorage.getItem(TRAINER_KEY);
+  migrateTrainerIfNeeded(campId);
+  const v = localStorage.getItem(trainerKey(campId));
   return v as CampTrainer | null;
 }
 
-export function setTrainerSession(trainer: CampTrainer) {
-  localStorage.setItem(TRAINER_KEY, trainer);
+export function setTrainerSession(campId: CampId, trainer: CampTrainer) {
+  localStorage.setItem(trainerKey(campId), trainer);
 }
 
-let nicknameCache: Map<string, string> = new Map();
+const nicknameCaches = new Map<CampId, Map<string, string>>();
 
-export async function getPlayerNickname(playerId: string): Promise<string> {
-  if (nicknameCache.has(playerId)) return nicknameCache.get(playerId)!;
-  const players = await getCampPlayers();
-  nicknameCache = new Map(players.map((p) => [p.id, p.nickname]));
-  return nicknameCache.get(playerId) ?? '?';
+export async function getPlayerNickname(campId: CampId, playerId: string): Promise<string> {
+  const cached = nicknameCaches.get(campId);
+  if (cached?.has(playerId)) return cached.get(playerId)!;
+  const players = await getCampPlayers(campId);
+  const map = new Map(players.map((p) => [p.id, p.nickname]));
+  nicknameCaches.set(campId, map);
+  return map.get(playerId) ?? '?';
 }
 
-export function subscribeCampFeed(onChange: () => void): () => void {
+export function subscribeCampFeed(campId: CampId, onChange: () => void): () => void {
   if (!shouldUseSupabase()) return () => undefined;
 
   try {
     const supabase = createClient();
     const channel = supabase
-      .channel('camp-feed-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'camp_feed' }, () =>
-        onChange()
+      .channel(`camp-feed-live-${campId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'camp_feed',
+          filter: `camp_id=eq.${campId}`,
+        },
+        () => onChange()
       )
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'camp_players' }, () =>
-        onChange()
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'camp_players',
+          filter: `camp_id=eq.${campId}`,
+        },
+        () => onChange()
       )
       .subscribe();
 
