@@ -3,9 +3,14 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 const LEGACY_MEDIA_KEY = 'tof-social-camp-media';
 
+/** Max upload size (matches storage bucket limit). */
+export const CAMP_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
+
 function mediaKey(campId: CampId) {
   return `tof-social-camp-media:${campId}`;
 }
+
+export type CampMediaKind = 'image' | 'video';
 
 export interface CampMediaItem {
   id: string;
@@ -13,6 +18,7 @@ export interface CampMediaItem {
   publicUrl: string;
   caption: string;
   createdAt: string;
+  mediaType: CampMediaKind;
 }
 
 type DbMedia = {
@@ -21,15 +27,37 @@ type DbMedia = {
   public_url: string;
   caption: string;
   created_at: string;
+  media_type?: string | null;
 };
 
+const VIDEO_EXT = new Set(['mp4', 'webm', 'mov', 'm4v', 'ogg']);
+
+export function inferMediaTypeFromPath(pathOrUrl: string): CampMediaKind {
+  const clean = pathOrUrl.split('?')[0].toLowerCase();
+  const ext = clean.includes('.') ? clean.split('.').pop()! : '';
+  return VIDEO_EXT.has(ext) ? 'video' : 'image';
+}
+
+export function detectMediaType(file: File): CampMediaKind | null {
+  if (file.type.startsWith('image/')) return 'image';
+  if (file.type.startsWith('video/')) return 'video';
+  if (/\.(jpe?g|png|gif|webp|heic)$/i.test(file.name)) return 'image';
+  if (/\.(mp4|webm|mov|m4v|ogg)$/i.test(file.name)) return 'video';
+  return null;
+}
+
 function mapMedia(row: DbMedia): CampMediaItem {
+  const mediaType =
+    row.media_type === 'video' || row.media_type === 'image'
+      ? row.media_type
+      : inferMediaTypeFromPath(row.storage_path || row.public_url);
   return {
     id: row.id,
     storagePath: row.storage_path,
     publicUrl: row.public_url,
     caption: row.caption,
     createdAt: row.created_at,
+    mediaType,
   };
 }
 
@@ -47,7 +75,10 @@ function readLocalMedia(campId: CampId): CampMediaItem[] {
   const raw = localStorage.getItem(mediaKey(campId));
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as CampMediaItem[];
+    return (JSON.parse(raw) as CampMediaItem[]).map((item) => ({
+      ...item,
+      mediaType: item.mediaType ?? inferMediaTypeFromPath(item.storagePath || item.publicUrl),
+    }));
   } catch {
     return [];
   }
@@ -96,8 +127,12 @@ export async function getCampMedia(campId: CampId, limit?: number): Promise<Camp
 async function uploadCampMediaLocal(
   campId: CampId,
   file: File,
-  caption: string
+  caption: string,
+  mediaType: CampMediaKind
 ): Promise<CampMediaItem> {
+  if (mediaType === 'video') {
+    throw new Error('Video-upload vereist Supabase (te groot voor lokale opslag).');
+  }
   const publicUrl = await fileToDataUrl(file);
   const item: CampMediaItem = {
     id: crypto.randomUUID(),
@@ -105,6 +140,7 @@ async function uploadCampMediaLocal(
     publicUrl,
     caption: caption.trim(),
     createdAt: new Date().toISOString(),
+    mediaType,
   };
   const items = readLocalMedia(campId);
   items.unshift(item);
@@ -121,20 +157,35 @@ export async function uploadCampMedia(
     throw new Error('Upload niet beschikbaar.');
   }
 
+  const mediaType = detectMediaType(file);
+  if (!mediaType) {
+    throw new Error('Alleen foto\'s en video\'s zijn toegestaan.');
+  }
+  if (file.size > CAMP_MEDIA_MAX_BYTES) {
+    throw new Error('Bestand is te groot (max. 100 MB).');
+  }
+
   if (!usesSupabaseMedia()) {
-    return uploadCampMediaLocal(campId, file, caption);
+    return uploadCampMediaLocal(campId, file, caption, mediaType);
   }
 
   const supabase = createClient();
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const ext = file.name.split('.').pop()?.toLowerCase() || (mediaType === 'video' ? 'mp4' : 'jpg');
   const storagePath = `${campId}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from('camp-media')
-    .upload(storagePath, file, { cacheControl: '3600', upsert: false });
+    .upload(storagePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || undefined,
+    });
 
   if (uploadError) {
-    return uploadCampMediaLocal(campId, file, caption);
+    if (mediaType === 'video') {
+      throw new Error(uploadError.message || 'Video-upload mislukt.');
+    }
+    return uploadCampMediaLocal(campId, file, caption, mediaType);
   }
 
   const { data: urlData } = supabase.storage.from('camp-media').getPublicUrl(storagePath);
@@ -146,12 +197,32 @@ export async function uploadCampMedia(
       storage_path: storagePath,
       public_url: urlData.publicUrl,
       caption: caption.trim(),
+      media_type: mediaType,
     })
     .select()
     .single();
 
   if (error) {
-    return uploadCampMediaLocal(campId, file, caption);
+    // Older DB without media_type column — retry without it
+    if (String(error.message || '').toLowerCase().includes('media_type')) {
+      const retry = await supabase
+        .from('camp_media')
+        .insert({
+          camp_id: campId,
+          storage_path: storagePath,
+          public_url: urlData.publicUrl,
+          caption: caption.trim(),
+        })
+        .select()
+        .single();
+      if (!retry.error && retry.data) {
+        return { ...mapMedia(retry.data as DbMedia), mediaType };
+      }
+    }
+    if (mediaType === 'video') {
+      throw new Error('Video opgeslagen in storage, maar database-insert mislukte. Run migratie 009.');
+    }
+    return uploadCampMediaLocal(campId, file, caption, mediaType);
   }
   return mapMedia(data as DbMedia);
 }

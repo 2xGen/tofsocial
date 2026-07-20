@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Poppins } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
 import { AuthProvider } from '@/lib/auth-context';
 import './globals.css';
 
@@ -34,6 +35,7 @@ export default function RootLayout({
     <html lang="nl-NL" className={poppins.variable}>
       <body className="min-h-screen font-poppins">
         <AuthProvider>{children}</AuthProvider>
+        <Analytics />
       </body>
     </html>
   );
